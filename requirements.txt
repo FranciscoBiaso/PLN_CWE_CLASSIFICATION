@@ -1,0 +1,9 @@
+
+tree-sitter==0.20.1
+gensim
+scikit-learn
+torch
+transformers
+joblib
+seaborn
+matplotlib
