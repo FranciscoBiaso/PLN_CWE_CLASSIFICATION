@@ -33,7 +33,41 @@ No caso do modelo **CodeBERT**, utilizamos o modelo pré-treinado da Hugging Fac
 A evolução no pré-processamento de código representa um marco importante no desenvolvimento do projeto, permitindo uma análise mais detalhada e assertiva. O pré-processamento agora conta com dois modos complementares que aprimoram significativamente os embeddings gerados:
 
 ### **Modo 1: Foco nos Identificadores**
-Neste modo, o pré-processamento prioriza apenas os elementos semânticos do código, como nomes de variáveis, funções e classes. Essa abordagem simplificada é eficiente para tarefas que dependem exclusivamente da identificação dos componentes principais do código, sendo ideal para cenários com menor complexidade.
+Neste modo, o pré-processamento prioriza apenas os elementos semânticos do código, como nomes de variáveis, funções e classes. Essa abordagem simplificada é eficiente para tarefas que dependem exclusivamente da identificação dos componentes principais do código, sendo ideal para cenários com menor complexidade. Exemplo de tokens processados neste modo:
+
+```json
+{
+  "debug": "Tokens processados",
+  "tokens": [
+    "OMITBAD",
+    "#include \"std_testcase.h\"",
+    "\"std_testcase.h\"",
+    "#include \"CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84.h\"",
+    "\"CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84.h\"",
+    "CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84",
+    "CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84_bad",
+    "char",
+    "dataCopy",
+    "data",
+    "dataCopy",
+    "data",
+    "new",
+    "char",
+    "CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84_bad",
+    "source",
+    "SRC_STRING",
+    "strncpy",
+    "data",
+    "source",
+    "strlen",
+    "source",
+    "printLine",
+    "data",
+    "delete",
+    "data"
+  ]
+}
+```
 
 ### **Modo 2: Embeddings Enriquecidos**
 O segundo modo vai além dos identificadores, incorporando elementos semânticos e estruturais do código. Ele inclui:
@@ -42,6 +76,47 @@ O segundo modo vai além dos identificadores, incorporando elementos semânticos
 - **Estruturas de Controle:** Instruções como `if`, `for`, e `while`.
 - **Diretivas do Pré-processador:** Como `#include` e `#define`.
 - **Literais:** Strings, números e valores específicos do código.
+
+Exemplo de tokens processados neste modo:
+
+```json
+{
+  "debug": "Tokens processados",
+  "tokens": [
+    "OMITBAD",
+    "#include \"std_testcase.h\"\n",
+    "\"std_testcase.h\"",
+    "#include \"CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84.h\"\n",
+    "\"CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84.h\"",
+    "namespace",
+    "CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84",
+    "CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84_bad",
+    "char",
+    "dataCopy",
+    "data",
+    "dataCopy",
+    "data",
+    "new",
+    "char",
+    "10",
+    "CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84_bad",
+    "source",
+    "10",
+    "1",
+    "SRC_STRING",
+    "strncpy",
+    "data",
+    "source",
+    "strlen",
+    "source",
+    "1",
+    "printLine",
+    "data",
+    "delete",
+    "data"
+  ]
+}
+```
 
 Esse método captura tanto o **fluxo lógico** quanto os valores críticos do código, proporcionando uma representação mais rica e informativa. Como resultado, o modelo consegue identificar padrões mais complexos e contextuais, melhorando a precisão na classificação de vulnerabilidades e aumentando sua eficácia em tarefas de alta complexidade.
 
