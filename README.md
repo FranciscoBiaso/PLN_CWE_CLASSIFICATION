@@ -30,13 +30,27 @@ No caso do modelo **CodeBERT**, utilizamos o modelo pré-treinado da Hugging Fac
 
 ## Melhorias no Projeto - Pré-processamento
 
-A introdução de dois modos distintos de pré-processamento de código no projeto representa um avanço significativo na análise de dados e na geração de embeddings mais ricos e precisos. O primeiro modo adota uma abordagem simplificada, concentrando-se exclusivamente nos identificadores, como nomes de variáveis, funções e classes.
+A evolução no pré-processamento de código representa um marco importante no desenvolvimento do projeto, permitindo uma análise mais detalhada e assertiva. O pré-processamento agora conta com dois modos complementares que aprimoram significativamente os embeddings gerados:
 
-Por outro lado, o segundo modo adota uma abordagem mais abrangente, enriquecendo os embeddings ao incluir tanto elementos semânticos (e.g., identificadores como `data`, `strncpy`, `SRC_STRING`) quanto estruturais (e.g., estruturas de controle como `if` e `for`, literais como números e strings, e diretivas do pré-processador como `#include` e `#define`). Ao integrar essas informações adicionais, o modelo é capaz de capturar não apenas os elementos que descrevem o que o código faz, mas também como ele é estruturado e executado. Isso permite que os embeddings reflitam com maior precisão as relações lógicas e contextuais presentes no código, tornando-os mais ricos e informativos.
+### **Modo 1: Foco nos Identificadores**
+Neste modo, o pré-processamento prioriza apenas os elementos semânticos do código, como nomes de variáveis, funções e classes. Essa abordagem simplificada é eficiente para tarefas que dependem exclusivamente da identificação dos componentes principais do código, sendo ideal para cenários com menor complexidade.
 
-Esse segundo modo melhora significativamente a qualidade dos embeddings, pois fornece uma visão completa do código, incorporando tanto o fluxo lógico quanto os valores e padrões específicos que afetam o comportamento do programa. A inclusão de estruturas de controle e diretivas do pré-processador ajuda a modelar o fluxo de execução e as dependências externas, enquanto os literais fornecem detalhes específicos, como valores críticos e mensagens exibidas. Como resultado, o modelo se torna mais eficiente na identificação de vulnerabilidades, padrões de codificação e erros contextuais.
+### **Modo 2: Embeddings Enriquecidos**
+O segundo modo vai além dos identificadores, incorporando elementos semânticos e estruturais do código. Ele inclui:
 
-Essa evolução no pré-processamento amplia a capacidade do modelo de realizar análises mais detalhadas e confiáveis, especialmente em tarefas de maior complexidade. Ao enriquecer a granularidade e o contexto dos dados de entrada, o segundo modo eleva a qualidade dos embeddings gerados, permitindo ao modelo capturar padrões mais complexos e fornecer classificações mais precisas, fortalecendo o potencial analítico do projeto.
+- **Identificadores:** Variáveis, funções, classes.
+- **Estruturas de Controle:** Instruções como `if`, `for`, e `while`.
+- **Diretivas do Pré-processador:** Como `#include` e `#define`.
+- **Literais:** Strings, números e valores específicos do código.
+
+Esse método captura tanto o **fluxo lógico** quanto os valores críticos do código, proporcionando uma representação mais rica e informativa. Como resultado, o modelo consegue identificar padrões mais complexos e contextuais, melhorando a precisão na classificação de vulnerabilidades e aumentando sua eficácia em tarefas de alta complexidade.
+
+### **Benefícios**
+- Melhor compreensão do fluxo de execução.
+- Capacidade de identificar relações contextuais.
+- Maior detalhamento dos padrões de codificação.
+
+Essas melhorias tornam o sistema mais robusto, ampliando o escopo de análise e fornecendo classificações mais confiáveis.
 
 ## Objetivo do Projeto
 
@@ -65,3 +79,4 @@ Você pode instalar as dependências do projeto utilizando o `pip`. Para isso, c
     ```
 
 Onde o arquivo `requirements.txt` deve conter as seguintes bibliotecas (ou similares):
+
