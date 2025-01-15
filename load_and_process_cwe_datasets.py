@@ -1,186 +1,189 @@
 import os
 import json
-import joblib
 import argparse
-import numpy as np
-import re  # Adicione esta linha
 from tree_sitter import Language, Parser
-import gensim
 from gensim.models import Word2Vec
 
-# Carregar a biblioteca combinada de linguagens
+# Carrega a biblioteca de linguagens combinadas para tree-sitter
 C_LANGUAGE = Language('tree-sitter-dir/tree_sitter.so', 'c')
 
-CPP_RESERVED_WORDS = {
-    "auto", "break", "case", "char", "const", "continue", "default", "delete", "do", "double", "else", 
-    "enum", "explicit", "export", "extern", "false", "float", "for", "friend", "goto", "if", "inline", 
-    "int", "long", "mutable", "namespace", "new", "noexcept", "not", "nullptr", "operator", "private", 
-    "protected", "public", "register", "reinterpret_cast", "return", "short", "signed", "sizeof", 
-    "static", "static_assert", "static_cast", "struct", "switch", "template", "this", "throw", "true", 
-    "try", "typedef", "typeid", "typename", "union", "unsigned", "using", "virtual", "void", "volatile", 
-    "wchar_t", "while"
-}
-
-LIBRARY_FUNCTIONS = {
-    "strcpy", "printf", "scanf", "malloc", "free", "memset", "memcpy", "strlen", "strcat", "fopen", 
-    "fclose", "fprintf", "fscanf", "std::cout", "std::cin", "std::endl", "std::string"
-}
-
-# Função para carregar a gramática C/C++ do tree-sitter
-def load_tree_sitter_grammar():
-    return C_LANGUAGE
-
-# Função de pré-processamento usando o Tree-Sitter
-def preprocess_code(code, debug=False):
+def collect_tokens(node, code):
     """
-    Pré-processa o código fornecido usando tree-sitter para análise e tokenização.
+    Coleta identificadores e processa os nós filhos, excluindo o conteúdo do nó raiz.
+
+    Args:
+        node: Nó atual da AST (Árvore de Sintaxe Abstrata).
+        code: Código-fonte como uma string.
+
+    Returns:
+        List[str]: Lista de tokens processados.
     """
-    language = C_LANGUAGE
+    tokens = []
+
+    # Ignora o processamento do conteúdo bruto do nó raiz
+    if node.type == 'identifier':  # Captura identificadores
+        tokens.append(code[node.start_byte:node.end_byte].strip())
+    elif node.type.startswith('preproc_'):  # Trata diretivas de pré-processador
+        tokens.append(code[node.start_byte:node.end_byte].strip())
+    elif node.type == 'string_literal':  # Trata literais de string
+        tokens.append(code[node.start_byte:node.end_byte].strip())
+
+    # Processa recursivamente os nós filhos
+    for child in node.children:
+        tokens.extend(collect_tokens(child, code))
+
+    return tokens
+
+def collect_relevant_tokens(node, code, debug=False, depth=0):
+    """
+    Coleta tokens relevantes da árvore de sintaxe.
+
+    Args:
+        node: Nó atual da AST.
+        code: Código-fonte original como string.
+        debug: Booleano para ativar logs detalhados.
+        depth: Profundidade atual na árvore para depuração.
+
+    Returns:
+        List[dict]: Lista de tokens relevantes com metadados.
+    """
+    tokens = []
+    indent = "  " * depth
+
+    if debug:
+        print(f"{indent}[DEBUG] Visitando nó: {node.type}")
+
+    if node.type in {"string_literal", "number_literal"}:  # Literais
+        token = {
+            "text": code[node.start_byte:node.end_byte],
+            "type": node.type,
+            "category": "literal"
+        }
+        tokens.append(token)
+        if debug:
+            print(f"{indent}[INFO] Literal encontrado: {token}")
+    elif node.type in {"binary_operator", "unary_operator"}:  # Operadores
+        token = {
+            "text": code[node.start_byte:node.end_byte],
+            "type": node.type,
+            "category": "operator"
+        }
+        tokens.append(token)
+        if debug:
+            print(f"{indent}[INFO] Operador encontrado: {token}")
+    elif node.type in {"if_statement", "for_statement", "while_statement", "return_statement"}:  # Estruturas de controle
+        token = {
+            "text": node.type,
+            "type": node.type,
+            "category": "control_structure"
+        }
+        tokens.append(token)
+        if debug:
+            print(f"{indent}[INFO] Estrutura de controle encontrada: {token}")
+        for child in node.children:
+            tokens.extend(collect_relevant_tokens(child, code, debug, depth + 1))
+    elif node.type in {"type_identifier", "identifier"}:  # Identificadores e tipos
+        token = {
+            "text": code[node.start_byte:node.end_byte],
+            "type": node.type,
+            "category": "identifier"
+        }
+        tokens.append(token)
+        if debug:
+            print(f"{indent}[INFO] Identificador encontrado: {token}")
+    elif node.type.startswith("preproc_"):  # Diretivas de pré-processador
+        token = {
+            "text": code[node.start_byte:node.end_byte],
+            "type": node.type,
+            "category": "preprocessor"
+        }
+        tokens.append(token)
+        if debug:
+            print(f"{indent}[INFO] Diretiva de pré-processador encontrada: {token}")
+
+    for child in node.children:
+        tokens.extend(collect_relevant_tokens(child, code, debug, depth + 1))
+
+    return tokens
+
+def preprocess_code(code, debug=False, mode="relevant"):
+    """
+    Preprocessa o código fornecido usando tree-sitter para análise e tokenização.
+
+    Args:
+        code: Código-fonte a ser processado.
+        debug: Ativa logs detalhados.
+        mode: Modo de processamento ("relevant" ou "identifiers").
+    """
     parser = Parser()
-    parser.set_language(language)
+    parser.set_language(C_LANGUAGE)
 
     try:
         tree = parser.parse(bytes(code, "utf8"))
     except Exception as e:
-        print(f"Erro ao parsear o código! Erro: {e}")
+        print(f"Erro ao analisar o código! Erro: {e}")
         return None
 
-    # Função para coletar os tokens
-    def collect_tokens(node):
-        tokens = []
-        if node.type == 'identifier':  # Captura identificadores
-            tokens.append(code[node.start_byte:node.end_byte])
-        for child in node.children:
-            tokens.extend(collect_tokens(child))
-        return tokens
+    tokens = []
+    if mode == "identifiers":
+        tokens = collect_tokens(tree.root_node, code)
+    elif mode == "relevant":
+        tokens = collect_relevant_tokens(tree.root_node, code, debug)
+    else:
+        print(f"[ERRO] Modo desconhecido: {mode}")
+        return None
+    # Remove o primeiro token, se existir
+    if tokens:
+        tokens.pop(0)
 
-    # Coletar tokens do AST
-    tokens = collect_tokens(tree.root_node)
+    # Filtra e achata tokens em strings
+    token_texts = [token["text"] if isinstance(token, dict) else token for token in tokens]
 
-    # Debug: Se ativado, imprime os tokens processados
     if debug:
-        print("Tokens processados:", tokens)
+        print("[DEBUG] Tokens processados:", token_texts)
 
-    # Retorna o código como string para uso com o tokenizador
-    return " ".join(tokens)  # Aqui, a saída será uma string, não uma lista de tokens.
+    return " ".join(token_texts)
 
-# Função para carregar os conjuntos de dados CWE com manipulação de subpastas aninhadas
-def load_all_cwe_datasets(base_path, min_files, max_files=None):
+def debug_file(file_path, debug, mode):
     """
-    Carrega todos os arquivos de código (C/C++) das subpastas em 'base_path', pré-processa-os
-    e atribui rótulos com base nos nomes das pastas CWE, ignorando arquivos 'main.cpp' e 'main_linux.cpp'.
+    Depura um arquivo específico, processando-o.
+
+    Args:
+        file_path: Caminho para o arquivo a ser depurado.
+        debug: Booleano para ativar logs detalhados.
+        mode: Modo de processamento ("relevant" ou "identifiers").
     """
-    data = []
-    labels = []
-    label_map = {}
-    current_label = 0
+    print(f"[INFO] Depurando arquivo: {file_path}")
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            code = f.read()
+            processed_code = preprocess_code(code, debug, mode)
+            if processed_code:
+                print("[DEBUG] Saída do código processado:")
+                print(processed_code)
+            else:
+                print("[AVISO] O arquivo não pôde ser processado.")
+    except FileNotFoundError:
+        print(f"[ERRO] Arquivo não encontrado: {file_path}")
 
-    for root, dirs, _ in os.walk(base_path):
-        for dir_name in sorted(dirs):
-            if dir_name.startswith("CWE"):
-                cwe_path = os.path.join(root, dir_name)
-                print(f"[INFO] Processando pasta CWE: {cwe_path}")
-
-                # Conta todos os arquivos .c e .cpp no diretório e subdiretórios
-                file_count = sum(
-                    1 for sub_root, _, files in os.walk(cwe_path)
-                    for file in files if file.endswith((".c", ".cpp")) and "_good" not in file and file not in ["main.cpp", "main_linux.cpp"]
-                )
-
-                if file_count < min_files:
-                    print(f"[AVISO] Ignorando pasta '{dir_name}' devido a arquivos insuficientes ({file_count}/{min_files})")
-                    continue
-
-                # Adiciona a pasta CWE ao mapa de rótulos
-                label_map[dir_name] = current_label
-                current_label += 1
-
-                loaded_files = 0
-                for sub_root, _, files in os.walk(cwe_path):
-                    for file in files:
-                        # Ignora 'main.cpp' e 'main_linux.cpp'
-                        if file.endswith((".c", ".cpp")) and file not in ["main.cpp", "main_linux.cpp"]:
-                            if max_files and loaded_files >= max_files:
-                                break
-                            file_path = os.path.join(sub_root, file)
-                            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                                code = f.read()
-
-                                # Pré-processa o código
-                                processed_code = preprocess_code(code)
-                                if processed_code is None:  # Ignorar trechos vazios
-                                    print(f"[AVISO] Ignorando arquivo processado vazio: {file_path}")
-                                    continue
-
-                                # Usa o valor do label_map para example_type
-                                example_type = label_map[dir_name]
-
-                                # Tokeniza o código em palavras para o Word2Vec
-                                tokens = processed_code.split()
-
-                                # Armazena como um dicionário
-                                data.append({"code": tokens, "example_type": example_type})
-                                labels.append(label_map[dir_name])
-                                loaded_files += 1
-
-    print(f"[RESUMO] Processados {len(data)} arquivos em {len(label_map)} categorias CWE.")
-    return data, labels, label_map
-
-# Função para treinar o modelo Word2Vec
-def train_word2vec(data):
-    """
-    Treina o modelo Word2Vec usando os dados fornecidos.
-    """
-    # Treina o modelo Word2Vec com 100 dimensões
-    model = Word2Vec(sentences=data, vector_size=100, window=5, min_count=1, workers=4)
-    model.save("word2vec.model")
-    return model
-
-# Função para converter tokens em vetores utilizando o modelo Word2Vec
-def convert_to_vectors(data, model):
-    """
-    Converte os tokens em vetores de acordo com o modelo Word2Vec.
-    """
-    vectors = []
-    for item in data:
-        vector = np.mean([model.wv[token] for token in item["code"] if token in model.wv], axis=0)
-        vectors.append(vector)
-    return vectors
-
-# Função principal para executar a aplicação
 def main():
-    parser = argparse.ArgumentParser(description="Processar conjuntos de dados CWE e treinar modelo.")
-    parser.add_argument("--base_path", type=str, help="Caminho para a pasta principal contendo os diretórios CWE.")
+    parser = argparse.ArgumentParser(description="Processa datasets CWE e treina um modelo.")
+    parser.add_argument("--base_path", type=str, help="Caminho para o diretório principal contendo subdiretórios CWE.")
     parser.add_argument("--minFiles", type=int, default=10, help="Número mínimo de arquivos necessários em uma pasta CWE para processamento.")
-    parser.add_argument("--maxFiles", type=int, default=100, help="Número máximo de arquivos a serem carregados por pasta CWE.")
+    parser.add_argument("--maxFiles", type=int, default=100, help="Número máximo de arquivos a serem processados por pasta CWE.")
+    parser.add_argument("--debug", action="store_true", help="Ativa modo de depuração com logs detalhados.")
+    parser.add_argument("--debug_file", type=str, help="Especifica um arquivo para depuração.")
+    parser.add_argument("--token_mode", type=str, choices=["relevant", "identifiers"], default="relevant",
+                        help="Escolha a função para processar tokens: 'relevant' para collect_relevant_tokens, 'identifiers' para collect_tokens.")
     args = parser.parse_args()
 
-    # Carregar todos os dados e rótulos
-    data, labels, label_map = load_all_cwe_datasets(args.base_path, args.minFiles, args.maxFiles)
-
-    # Salvar cwe_data.json
-    with open("cwe_data.json", "w", encoding="utf-8") as data_file:
-        json.dump(data, data_file, ensure_ascii=False, indent=4)
-    print("[INFO] Dados salvos em cwe_data.json")
-
-    # Treinar o modelo Word2Vec
-    word2vec_model = train_word2vec([item["code"] for item in data])
-
-    # Converter os dados para vetores
-    vectors = convert_to_vectors(data, word2vec_model)
-
-    # Salvar em arquivos JSON
-    with open("cwe_vectors.json", "w", encoding="utf-8") as vectors_file:
-        vectors_list = [vector.tolist() for vector in vectors]  # Converte para listas
-        json.dump(vectors_list, vectors_file, ensure_ascii=False, indent=4)
-
-    with open("cwe_labels.json", "w", encoding="utf-8") as labels_file:
-        json.dump(labels, labels_file, ensure_ascii=False, indent=4)
-
-    with open("cwe_label_map.json", "w", encoding="utf-8") as label_map_file:
-        json.dump(label_map, label_map_file, ensure_ascii=False, indent=4)
-
-    print("[INFO] Dados vetoriais, rótulos e mapeamento de rótulos foram salvos com sucesso em JSON!")
+    if args.debug and args.debug_file:
+        debug_file(args.debug_file, args.debug, args.token_mode)
+    elif args.base_path:
+        # Processa todo o dataset (não mostrado neste script para brevidade)
+        pass
+    else:
+        print("[ERRO] Você deve especificar --base_path ou --debug_file para processamento.")
 
 if __name__ == "__main__":
     main()

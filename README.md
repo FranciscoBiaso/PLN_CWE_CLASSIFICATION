@@ -28,6 +28,16 @@ O modelo foi treinado utilizando um conjunto de dados contendo códigos C/C++ co
 
 No caso do modelo **CodeBERT**, utilizamos o modelo pré-treinado da Hugging Face para tokenizar e classificar os códigos diretamente, sem a necessidade de vetorização manual. A classificação do arquivo é feita com base nos tokens extraídos e no treinamento realizado nos dados.
 
+## Melhorias no Projeto - Pré-processamento
+
+A introdução de dois modos distintos de pré-processamento de código no projeto representa um avanço significativo na análise de dados e na geração de embeddings mais ricos e precisos. O primeiro modo adota uma abordagem simplificada, concentrando-se exclusivamente nos identificadores, como nomes de variáveis, funções e classes.
+
+Por outro lado, o segundo modo adota uma abordagem mais abrangente, enriquecendo os embeddings ao incluir tanto elementos semânticos (e.g., identificadores como `data`, `strncpy`, `SRC_STRING`) quanto estruturais (e.g., estruturas de controle como `if` e `for`, literais como números e strings, e diretivas do pré-processador como `#include` e `#define`). Ao integrar essas informações adicionais, o modelo é capaz de capturar não apenas os elementos que descrevem o que o código faz, mas também como ele é estruturado e executado. Isso permite que os embeddings reflitam com maior precisão as relações lógicas e contextuais presentes no código, tornando-os mais ricos e informativos.
+
+Esse segundo modo melhora significativamente a qualidade dos embeddings, pois fornece uma visão completa do código, incorporando tanto o fluxo lógico quanto os valores e padrões específicos que afetam o comportamento do programa. A inclusão de estruturas de controle e diretivas do pré-processador ajuda a modelar o fluxo de execução e as dependências externas, enquanto os literais fornecem detalhes específicos, como valores críticos e mensagens exibidas. Como resultado, o modelo se torna mais eficiente na identificação de vulnerabilidades, padrões de codificação e erros contextuais.
+
+Essa evolução no pré-processamento amplia a capacidade do modelo de realizar análises mais detalhadas e confiáveis, especialmente em tarefas de maior complexidade. Ao enriquecer a granularidade e o contexto dos dados de entrada, o segundo modo eleva a qualidade dos embeddings gerados, permitindo ao modelo capturar padrões mais complexos e fornecer classificações mais precisas, fortalecendo o potencial analítico do projeto.
+
 ## Objetivo do Projeto
 
 O objetivo deste projeto é construir um sistema que, ao receber um código C/C++, seja capaz de classificar qual tipo de falha de segurança (CWE) o código possui, com base em falhas conhecidas previamente treinadas.
@@ -55,4 +65,3 @@ Você pode instalar as dependências do projeto utilizando o `pip`. Para isso, c
     ```
 
 Onde o arquivo `requirements.txt` deve conter as seguintes bibliotecas (ou similares):
-
