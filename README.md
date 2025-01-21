@@ -1,75 +1,75 @@
 # Classificador de Vulnerabilidades CWE
 
-Este projeto tem como objetivo classificar falhas de segurança em códigos C/C++ utilizando modelos de aprendizado de máquina. O projeto foi desenvolvido para identificar falhas a partir de um conjunto de falhas previamente treinadas, utilizando dois tipos de modelos: **Random Forest** e **CodeBERT**.
+Este projeto tem como objetivo classificar falhas de segurança em códigos C/C++ utilizando modelos de aprendizado de máquina. O sistema foi desenvolvido para identificar vulnerabilidades a partir de um conjunto de falhas previamente treinadas, utilizando dois tipos de modelos: Random Forest e CodeBERT.
+
+## Índice
+
+- Descrição dos Scripts
+- Descrição Técnica
+- Melhorias no Projeto - Pré-processamento
+  - Modo 1: Foco nos Identificadores
+  - Modo 2: Embeddings Enriquecidos
+  - Benefícios
+- Objetivo do Projeto
+- Dependências
+- Apresentação/Trabalho
+  - Random Forest
+    - Execução dos Scripts
+    - Distribuição das Classes CWE
+    - Treinamento do Modelo
+    - Detalhes da Matriz de Confusão
+    - Resultados Finais
+- Contribuições
+- Licença
 
 ## Descrição dos Scripts
 
-1. **Carregar e Processar Conjuntos de Dados (load_and_process_cwe_datasets.py):** Este script tem como objetivo carregar e processar os arquivos de código C/C++, pré-processando-os utilizando **Tree-Sitter** para gerar tokens e associar rótulos de falhas baseados no tipo de vulnerabilidade (CWE). Os dados processados são então salvos em arquivos JSON que podem ser usados posteriormente para treinar modelos de classificação. Para executar o script, use o seguinte comando:
+1. **Carregar e Processar Conjuntos de Dados (`load_and_process_cwe_datasets.py`):**  
+   Este script carrega e processa os arquivos de código C/C++, pré-processando-os utilizando Tree-Sitter para gerar tokens e associar rótulos de falhas baseados no tipo de vulnerabilidade (CWE). Os dados processados são salvos em arquivos JSON para uso posterior no treinamento dos modelos de classificação.
 
-    ```bash
-    python3 load_and_process_cwe_datasets.py --base_path <diretório_dos_dados> --minFiles <número_mínimo_de_arquivos> --maxFiles <número_máximo_de_arquivos>
-    ```
+   **Execução:**
+   ```
+   python3 load_and_process_cwe_datasets.py --base_path <diretório_dos_dados> --minFiles <número_mínimo_de_arquivos> --maxFiles <número_máximo_de_arquivos>
+   ```
 
-2. **Pipeline de Treinamento (train_model.py):** Este script é responsável por carregar e pré-processar os dados, treinando um modelo **Random Forest** com os vetores extraídos do código utilizando **Word2Vec**. Ele também gera arquivos JSON contendo os vetores, rótulos e mapeamento das falhas, necessários para a classificação posterior. Para treinar o modelo, basta rodar o script da seguinte forma:
+2. **Pipeline de Treinamento (`train_model.py`):**  
+   Este script carrega e pré-processa os dados, treinando um modelo Random Forest com os vetores extraídos do código utilizando Word2Vec. Ele também gera arquivos JSON contendo os vetores, rótulos e mapeamento das falhas, necessários para a classificação posterior.
 
-    ```bash
-    python3 train_model.py --base_path <diretório_dos_dados> --minFiles <número_mínimo_de_arquivos> --maxFiles <número_máximo_de_arquivos>
-    ```
+   **Execução:**
+   ```
+   python3 train_model.py --base_path <diretório_dos_dados> --minFiles <número_mínimo_de_arquivos> --maxFiles <número_máximo_de_arquivos>
+   ```
 
-3. **Classificador (classify.py):** Este script é utilizado para classificar novos arquivos de código C++ em uma das falhas (CWE) treinadas anteriormente, utilizando os modelos **Random Forest** ou **CodeBERT**. O classificador pode ser executado em dois modos: **Random Forest** ou **CodeBERT**, dependendo da escolha do usuário. O modelo Random Forest é baseado em vetores gerados pelo **Word2Vec**, enquanto o modelo **CodeBERT** é uma rede neural treinada para a análise de código. Para utilizar o classificador, execute o script com os parâmetros necessários:
+3. **Classificador (`classify.py`):**  
+   Este script classifica novos arquivos de código C++ em uma das falhas (CWE) treinadas anteriormente, utilizando os modelos Random Forest ou CodeBERT. O classificador pode ser executado em dois modos, dependendo da escolha do usuário.
 
-    ```bash
-    python3 classify.py --file <caminho_do_arquivo> --model_type <random_forest|codebert> --model <caminho_para_o_modelo> --label_map <caminho_para_o_label_map>
-    ```
+   **Execução:**
+   ```
+   python3 classify.py --file <caminho_do_arquivo> --model_type <random_forest|codebert> --model <caminho_para_o_modelo> --label_map <caminho_para_o_label_map>
+   ```
 
 ## Descrição Técnica
 
-O modelo foi treinado utilizando um conjunto de dados contendo códigos C/C++ com falhas de segurança conhecidas, categorizadas em diferentes tipos de vulnerabilidades, como buffer overflow, falhas de controle de fluxo, entre outras. Para gerar os vetores de características do código, utilizamos o **Tree-Sitter** para análise sintática e o **Word2Vec** para gerar vetores de palavras. Esses vetores foram então alimentados no modelo **Random Forest** para a classificação das falhas.
+O modelo foi treinado utilizando um conjunto de dados contendo códigos C/C++ com falhas de segurança conhecidas, categorizadas em diferentes tipos de vulnerabilidades, como buffer overflow, falhas de controle de fluxo, entre outras.
 
-No caso do modelo **CodeBERT**, utilizamos o modelo pré-treinado da Hugging Face para tokenizar e classificar os códigos diretamente, sem a necessidade de vetorização manual. A classificação do arquivo é feita com base nos tokens extraídos e no treinamento realizado nos dados.
+### Vetorização com Tree-Sitter e Word2Vec
+- **Tree-Sitter:** Utilizado para análise sintática e geração de tokens dos códigos.
+- **Word2Vec:** Gera vetores de palavras a partir dos tokens processados.
+- **Random Forest:** Modelo de classificação que utiliza os vetores gerados para identificar as vulnerabilidades.
+
+### Modelo CodeBERT
+- **CodeBERT:** Rede neural pré-treinada da Hugging Face para análise de código, que tokeniza e classifica os códigos diretamente, sem necessidade de vetorização manual.
 
 ## Melhorias no Projeto - Pré-processamento
 
 A evolução no pré-processamento de código representa um marco importante no desenvolvimento do projeto, permitindo uma análise mais detalhada e assertiva. O pré-processamento agora conta com dois modos complementares que aprimoram significativamente os embeddings gerados:
 
-### **Modo 1: Foco nos Identificadores**
-Neste modo, o pré-processamento prioriza apenas os elementos semânticos do código, como nomes de variáveis, funções e classes. Essa abordagem simplificada é eficiente para tarefas que dependem exclusivamente da identificação dos componentes principais do código, sendo ideal para cenários com menor complexidade. Exemplo de tokens processados neste modo:
+### Modo 1: Foco nos Identificadores
 
-```json
-{
-  "debug": "Tokens processados",
-  "tokens": [
-    "OMITBAD",
-    "#include \"std_testcase.h\"",
-    "\"std_testcase.h\"",
-    "#include \"CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84.h\"",
-    "\"CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84.h\"",
-    "CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84",
-    "CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84_bad",
-    "char",
-    "dataCopy",
-    "data",
-    "dataCopy",
-    "data",
-    "new",
-    "char",
-    "CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84_bad",
-    "source",
-    "SRC_STRING",
-    "strncpy",
-    "data",
-    "source",
-    "strlen",
-    "source",
-    "printLine",
-    "data",
-    "delete",
-    "data"
-  ]
-}
-```
+Neste modo, o pré-processamento prioriza apenas os elementos semânticos do código, como nomes de variáveis, funções e classes. Essa abordagem simplificada é eficiente para tarefas que dependem exclusivamente da identificação dos componentes principais do código, sendo ideal para cenários com menor complexidade.
 
-### **Modo 2: Embeddings Enriquecidos**
+### Modo 2: Embeddings Enriquecidos
+
 O segundo modo vai além dos identificadores, incorporando elementos semânticos e estruturais do código. Ele inclui:
 
 - **Identificadores:** Variáveis, funções, classes.
@@ -77,59 +77,14 @@ O segundo modo vai além dos identificadores, incorporando elementos semânticos
 - **Diretivas do Pré-processador:** Como `#include` e `#define`.
 - **Literais:** Strings, números e valores específicos do código.
 
-Exemplo de tokens processados neste modo:
-
-```json
-{
-  "debug": "Tokens processados",
-  "tokens": [
-    "OMITBAD",
-    "#include \"std_testcase.h\"\n",
-    "\"std_testcase.h\"",
-    "#include \"CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84.h\"\n",
-    "\"CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84.h\"",
-    "namespace",
-    "CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84",
-    "CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84_bad",
-    "char",
-    "dataCopy",
-    "data",
-    "dataCopy",
-    "data",
-    "new",
-    "char",
-    "10",
-    "CWE122_Heap_Based_Buffer_Overflow__cpp_CWE193_char_ncpy_84_bad",
-    "source",
-    "10",
-    "1",
-    "SRC_STRING",
-    "strncpy",
-    "data",
-    "source",
-    "strlen",
-    "source",
-    "1",
-    "printLine",
-    "data",
-    "delete",
-    "data"
-  ]
-}
-```
-
-Esse método captura tanto o **fluxo lógico** quanto os valores críticos do código, proporcionando uma representação mais rica e informativa. Como resultado, o modelo consegue identificar padrões mais complexos e contextuais, melhorando a precisão na classificação de vulnerabilidades e aumentando sua eficácia em tarefas de alta complexidade.
-
-### **Benefícios**
-- Melhor compreensão do fluxo de execução.
-- Capacidade de identificar relações contextuais.
-- Maior detalhamento dos padrões de codificação.
-
-Essas melhorias tornam o sistema mais robusto, ampliando o escopo de análise e fornecendo classificações mais confiáveis.
+#### Benefícios
+- **Melhor compreensão do fluxo de execução.**
+- **Capacidade de identificar relações contextuais.**
+- **Maior detalhamento dos padrões de codificação.**
 
 ## Objetivo do Projeto
 
-O objetivo deste projeto é construir um sistema que, ao receber um código C/C++, seja capaz de classificar qual tipo de falha de segurança (CWE) o código possui, com base em falhas conhecidas previamente treinadas.
+Construir um sistema que, ao receber um código C/C++, seja capaz de classificar o tipo de falha de segurança (CWE) presente, com base em falhas conhecidas previamente treinadas.
 
 ## Dependências
 
@@ -138,20 +93,101 @@ O projeto foi desenvolvido para rodar em **plataforma Ubuntu** e possui as segui
 - **Python 3.x**
 - **pip** (gerenciador de pacotes Python)
 
-Você pode instalar as dependências do projeto utilizando o `pip`. Para isso, crie um ambiente virtual e instale as bibliotecas necessárias com os seguintes comandos:
+### Instalação das Dependências
 
-1. Crie um ambiente virtual:
-
-    ```bash
+1. **Crie um ambiente virtual:**
+    ```
     python3 -m venv tree-sitter-env
     source tree-sitter-env/bin/activate
     ```
 
-2. Instale as dependências:
-
-    ```bash
+2. **Instale as dependências:**
+    ```
     pip install -r requirements.txt
     ```
 
-Onde o arquivo `requirements.txt` deve conter as seguintes bibliotecas (ou similares):
+**Conteúdo do `requirements.txt`:**
+```
+tree-sitter
+gensim
+scikit-learn
+transformers
+torch
+numpy
+pandas
+```
 
+## Apresentação/Trabalho
+
+### Modelo Random Forest
+
+#### Pipeline de Processamento e Vetorização de Código com Tree-Sitter e Word2Vec
+
+Foi utilizado o seguinte comando para processar os conjuntos de dados:
+```
+python3 load_and_process_cwe_datasets.py --base_path /home/fbiaso/dados/Documentos/PLN/C/testcases --maxFiles 16 --minFiles 10
+```
+
+#### Distribuição das Classes CWE
+
+A execução do script gerou uma base de dados cuja distribuição das classes pode ser visualizada na imagem abaixo:
+
+<img src="imgs/cwe_class_distribution.png" alt="Distribuição das Classes CW" width="85%">
+
+---
+---
+#### Treinamento do Modelo // Teste 1 // [test_size=0.3, n_estimators=100, vector_size=100]
+
+O modelo foi treinado utilizando o seguinte comando:
+```
+python3 ./train_cwe_model.py --data_dir ./ --word2vec_model_path word2vec.model
+```
+
+##### Acurácia Média:
+A acurácia média das classes é de **83%**.
+
+---
+
+#### Treinamento do Modelo // Teste 2 // [test_size=0.3, n_estimators=200, vector_size=100]
+
+O modelo foi treinado utilizando o seguinte comando:
+```
+ python3 ./train_cwe_model.py --data_dir ./ --word2vec_model_path word2vec.model --test_size 0.3 --random_state 44 --n_estimators 200 --vector_size 100
+```
+
+##### Acurácia Média:
+A acurácia média das classes é de **87%**.
+
+---
+
+#### Resultados Finais
+
+Este documento apresenta um relatório com os parâmetros de pré-processamento, modelo utilizado, acurácia geral, e outros detalhes relacionados à classificação.
+
+| Parâmetros                                        | Tipo de Pré-processamento | Modelo        | Acurácia Geral | Quantidade Total de Dados | Quantidade de Classes | Método de Representação | Percentual de Acerto |
+|---------------------------------------------------|---------------------------|---------------|----------------|---------------------------|-----------------------|--------------------------|----------------------|
+| test_size=0.3, ***n_estimators=50***, vector_size=100  | Tree-Sitter (ABS)         | Random Forest | 80%            | 123                       | 7                     | Word2Vec                 | 28.57%                  |
+| test_size=0.3, ***n_estimators=100***, vector_size=100  | Tree-Sitter (ABS)         | Random Forest | 87%            | 123                       | 7                     | Word2Vec                 | 28.57%                  |
+| test_size=0.3, ***n_estimators=200***, vector_size=100  | Tree-Sitter (ABS)         | Random Forest | 87%            | 123                       | 7                     | Word2Vec                 | 28.57%                  |
+| test_size=0.3, ***n_estimators=1000***, vector_size=100  | Tree-Sitter (ABS)         | Random Forest | 87%            | 123                       | 7                     | Word2Vec                 | 28.57%                  |
+| test_size=0.3, n_estimators=100, ***vector_size=20***  | Tree-Sitter (ABS)         | Random Forest | 83%            | 123                       | 7                     | Word2Vec                 | 28.57%                  |
+| test_size=0.3, n_estimators=100, ***vector_size=40***  | Tree-Sitter (ABS)         | Random Forest | 83%            | 123                       | 7                     | Word2Vec                 | 28.57%                  |
+| test_size=0.3, n_estimators=100, ***vector_size=80***  | Tree-Sitter (ABS)         | Random Forest | 83%            | 123                       | 7                     | Word2Vec                 | 28.57%                  |
+| test_size=0.3, n_estimators=100, ***vector_size=160***  | Tree-Sitter (ABS)         | Random Forest | 83%            | 123                       | 7                     | Word2Vec                 | 28.57%                  |
+| ***test_size=0.1***, n_estimators=100, vector_size=100  | Tree-Sitter (ABS)         | Random Forest | 90%            | 123                       | 7                     | Word2Vec                 | 28.57%                  |
+| ***test_size=0.15***, n_estimators=100, vector_size=100  | Tree-Sitter (ABS)         | Random Forest | 93%            | 123                       | 7                     | Word2Vec                 | 28.57%                  |
+| ***test_size=0.16***, n_estimators=100, vector_size=100  | Tree-Sitter (ABS)         | Random Forest | 100%            | 123                       | 7                     | Word2Vec                 | 28.57%                  |
+| ***test_size=0.20***, n_estimators=100, vector_size=100  | Tree-Sitter (ABS)         | Random Forest | 90%            | 123                       | 7                     | Word2Vec                 | 28.57%                  |
+
+## Descrição dos Parâmetros
+
+- **Parâmetros**: Configurações utilizadas no modelo, como tamanho do teste (`test_size`), número de estimadores (`n_estimators`), e tamanho do vetor (`vector_size`).
+- **Tipo de Pré-processamento**: Técnica utilizada para pré-processamento dos dados (ex: Tree-Sitter).
+- **Modelo**: O modelo de aprendizado de máquina utilizado (ex: Random Forest).
+- **Acurácia Geral**: Percentual de acerto alcançado pelo modelo.
+- **Quantidade Total de Dados**: Número de amostras utilizadas no modelo.
+- **Quantidade de Classes**: Número de classes para a classificação.
+- **Método de Representação**: Método usado para representar as palavras (ex: Word2Vec).
+- **Percentual de Acerto**: Acurácia expressa como percentual de acerto.
+
+---

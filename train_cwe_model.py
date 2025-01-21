@@ -3,7 +3,6 @@ import os
 import json
 import joblib
 import numpy as np
-import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
@@ -13,16 +12,14 @@ from gensim.models import Word2Vec
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-# ANSI escape codes for colors
+# Define color codes for logging
 RESET = "\033[0m"
 GREEN = "\033[92m"
 RED = "\033[91m"
 YELLOW = "\033[93m"
 BLUE = "\033[94m"
 
-# Set up logging with colored output
 class ColoredFormatter(logging.Formatter):
-    """Custom formatter for adding color to logs."""
     def format(self, record):
         log_message = super().format(record)
         if record.levelno == logging.INFO:
@@ -33,7 +30,7 @@ class ColoredFormatter(logging.Formatter):
             return f"{RED}{log_message}{RESET}"
         return log_message
 
-# Set up logger with colored output
+# Configure logging
 logger = logging.getLogger()
 handler = logging.StreamHandler()
 formatter = ColoredFormatter('%(asctime)s - %(levelname)s - %(message)s')
@@ -41,78 +38,90 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
-def load_data():
-    with open("cwe_data.json", "r", encoding="utf-8") as f:
+def load_data(directory):
+    """
+    Carrega os dados e labels a partir de arquivos JSON no diretório especificado.
+    """
+    data_path = os.path.join(directory, "cwe_data.json")
+    labels_path = os.path.join(directory, "cwe_labels.json")
+    label_map_path = os.path.join(directory, "cwe_label_map.json")
+
+    # Check if all required files exist
+    for path in [data_path, labels_path, label_map_path]:
+        if not os.path.isfile(path):
+            logger.error(f"Arquivo não encontrado: {path}")
+            exit(1)
+
+    with open(data_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    with open("cwe_labels.json", "r", encoding="utf-8") as f:
+    with open(labels_path, "r", encoding="utf-8") as f:
         labels = json.load(f)
-    with open("cwe_label_map.json", "r", encoding="utf-8") as f:
+    with open(label_map_path, "r", encoding="utf-8") as f:
         label_map = json.load(f)
+
     logger.info(f"Dados carregados: {len(data)} exemplos")
     return data, labels, label_map
 
-# Função para carregar o modelo Word2Vec previamente treinado
-def load_word2vec_model(model_path="word2vec.model"):
+def load_word2vec_model(model_path):
     """
-    Carrega o modelo Word2Vec treinado previamente.
+    Carrega o modelo Word2Vec treinado a partir do caminho especificado.
     """
+    if not os.path.isfile(model_path):
+        logger.error(f"Modelo Word2Vec não encontrado: {model_path}")
+        exit(1)
     model = Word2Vec.load(model_path)
     logger.info(f"{GREEN}Modelo Word2Vec carregado com sucesso!{RESET}")
+    
+    # Exibe a quantidade de palavras no vocabulário do modelo
+    vocabulary_size = len(model.wv)
+    logger.info(f"{BLUE}O modelo Word2Vec contém {vocabulary_size} palavras no vocabulário.{RESET}")
+    
     return model
 
-# Função para vetorização dos dados utilizando o modelo Word2Vec carregado
-def vectorize_data_with_trained_word2vec(data, model):
+def vectorize_data_with_trained_word2vec(data, model, vector_size):
     """
-    Vetoriza os dados usando um modelo Word2Vec carregado.
+    Vetoriza os dados processados usando um modelo Word2Vec treinado.
     """
     logger.info(f"{YELLOW}Vetorizando os dados com o modelo Word2Vec carregado...{RESET}")
-    
-    # Extrair sentenças de código processadas
-    sentences = [entry["code"] for entry in data]
-
-    # Criar vetores médios para cada trecho de código
+    sentences = [entry["tokens"] for entry in data]
     X = []
-    for sentence in sentences:
+    for idx, sentence in enumerate(sentences):
         vectors = [model.wv[word] for word in sentence if word in model.wv]
         if vectors:
             X.append(np.mean(vectors, axis=0))
         else:
-            X.append(np.zeros(100))  # Se não houver palavras no modelo, usa um vetor zero
-
+            X.append(np.zeros(vector_size))
+        if (idx + 1) % 10 == 0:
+            logger.debug(f"Vetorizado {idx + 1}/{len(sentences)} exemplos")
     return np.array(X)
 
-# Função para treinar e avaliar o modelo Random Forest
-def train_and_evaluate(X, labels, label_map):
+def train_and_evaluate(X, labels, label_map, test_size, random_state, n_estimators, output_dir):
+    """
+    Treina um classificador Random Forest e avalia seu desempenho.
+    """
     logger.info(f"{YELLOW}Dividindo os dados em conjuntos de treino e teste...{RESET}")
     X_train, X_test, y_train, y_test = train_test_split(
-        X, labels, test_size=0.3, random_state=42, stratify=labels
+        X, labels, test_size=test_size, random_state=random_state, stratify=labels
     )
-
-    logger.info(f"{YELLOW}Treinando o modelo Random Forest com 100 estimadores...{RESET}")
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    logger.info(f"{YELLOW}Treinando o modelo Random Forest...{RESET}")
+    model = RandomForestClassifier(n_estimators=n_estimators, random_state=random_state)
     model.fit(X_train, y_train)
-    logger.info(f"{GREEN}Treinamento concluído com sucesso!{RESET}")
+    logger.info(f"{GREEN}Treinamento concluído!{RESET}")
 
-    logger.info(f"{YELLOW}Realizando previsões no conjunto de teste...{RESET}")
     y_pred = model.predict(X_test)
 
-    # Identificar classes únicas presentes no teste
+    label_to_cwe = {v: k for k, v in label_map.items()}
     test_classes = np.unique(y_test)
-    test_class_names = [name for name, val in label_map.items() if val in test_classes]
+    test_class_names = [label_to_cwe[label] for label in test_classes]
 
-    # Relatório de classificação
     logger.info(f"\n{BLUE}Relatório de Classificação:{RESET}")
-    print(
-        classification_report(
-            y_test, y_pred, labels=test_classes, target_names=test_class_names
-        )
+    report = classification_report(
+        y_test, y_pred, labels=test_classes, target_names=test_class_names
     )
+    print(report)
 
-    # Matriz de Confusão
     logger.info(f"{YELLOW}Gerando matriz de confusão...{RESET}")
     conf_matrix = confusion_matrix(y_test, y_pred, labels=test_classes)
-
-    # Plotando a matriz de confusão
     plt.figure(figsize=(12, 8))
     sns.heatmap(
         conf_matrix,
@@ -125,44 +134,38 @@ def train_and_evaluate(X, labels, label_map):
     plt.title("Matriz de Confusão")
     plt.xlabel("Rótulos Preditos")
     plt.ylabel("Rótulos Reais")
-    plt.xticks(rotation=45)
-    plt.yticks(rotation=45)
     plt.tight_layout()
-    
-    # Salvar a matriz de confusão em um arquivo
-    plt.savefig("confusion_matrix.png")
-    plt.close()
-    logger.info(f"{GREEN}Matriz de confusão salva em 'confusion_matrix.png'{RESET}")
 
+    # Passando o diretório de saída para salvar corretamente a matriz de confusão
+    output_conf_matrix_path = os.path.join(output_dir, "confusion_matrix.png")
+    plt.savefig(output_conf_matrix_path)
+    plt.close()
+    logger.info(f"{GREEN}Matriz de confusão salva como '{output_conf_matrix_path}'!{RESET}")
     return model
 
-# Função para salvar o modelo Random Forest
-def save_model(model, filename="random_forest_cwe_classifier.pkl"):
-    joblib.dump(model, filename)
-    logger.info(f"{GREEN}Modelo salvo como '{filename}'{RESET}")
-
-# Execução do pipeline
-if __name__ == "__main__":
-    logger.info(f"{BLUE}Iniciando pipeline de treinamento...{RESET}")
-    
-    # 1. Carregar os dados e labels
-    data, labels, label_map = load_data()
-
-    # Argumento para selecionar o método de vetorização
-    parser = argparse.ArgumentParser(description="Processar conjuntos de dados CWE e treinar modelo.")
-    parser.add_argument("--embedding_method", type=str, choices=["word2vec"], default="word2vec", help="Escolha o método de embedding: 'word2vec'")
+def main():
+    parser = argparse.ArgumentParser(description="Pipeline de treinamento e avaliação de modelo Random Forest.")
+    parser.add_argument("--data_dir", type=str, required=True, help="Caminho para o diretório contendo os arquivos JSON.")
+    parser.add_argument("--output_dir", type=str, default=".", help="Diretório para salvar os arquivos de saída.")
+    parser.add_argument("--word2vec_model_path", type=str, required=True, help="Caminho para o modelo Word2Vec treinado.")
+    parser.add_argument("--test_size", type=float, default=0.3, help="Proporção dos dados para o conjunto de teste.")
+    parser.add_argument("--random_state", type=int, default=42, help="Semente para aleatoriedade.")
+    parser.add_argument("--n_estimators", type=int, default=100, help="Número de árvores no Random Forest.")
+    parser.add_argument("--vector_size", type=int, default=300, help="Tamanho dos vetores gerados pelo Word2Vec.")
     args = parser.parse_args()
 
-    # 2. Carregar o modelo Word2Vec treinado
-    model = load_word2vec_model()
+    data, labels, label_map = load_data(args.data_dir)
+    model = load_word2vec_model(args.word2vec_model_path)
+    X = vectorize_data_with_trained_word2vec(data, model, args.vector_size)
+    trained_model = train_and_evaluate(X, labels, label_map, args.test_size, args.random_state, args.n_estimators, args.output_dir)
 
-    # 3. Vetorização com o modelo carregado
-    X = vectorize_data_with_trained_word2vec(data, model)
+    # Verifica se o diretório de saída existe, caso contrário cria
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
 
-    # 4. Treinamento e Avaliação
-    trained_model = train_and_evaluate(X, labels, label_map)
+    output_path = os.path.join(args.output_dir, "random_forest_cwe_classifier.pkl")
+    joblib.dump(trained_model, output_path)
+    logger.info(f"Modelo salvo em {output_path}.")
 
-    # 5. Salvar o Modelo
-    save_model(trained_model)
-    
-    logger.info(f"{GREEN}Pipeline concluído com sucesso!{RESET}")
+if __name__ == "__main__":
+    main()

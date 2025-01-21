@@ -1,189 +1,235 @@
 import os
 import json
 import argparse
+import numpy as np
 from tree_sitter import Language, Parser
 from gensim.models import Word2Vec
 
-# Carrega a biblioteca de linguagens combinadas para tree-sitter
+# Load the combined language library
+# Ensure you have built the tree-sitter library correctly and the path is accurate
+# Example build command:
+# Language.build_library(
+#     'tree-sitter-dir/tree_sitter.so',
+#     ['tree-sitter-c']
+# )
 C_LANGUAGE = Language('tree-sitter-dir/tree_sitter.so', 'c')
 
-def collect_tokens(node, code):
+def collect_relevant_tokens(node, code):
     """
-    Coleta identificadores e processa os nós filhos, excluindo o conteúdo do nó raiz.
+    Collect relevant tokens from the syntax tree.
 
     Args:
-        node: Nó atual da AST (Árvore de Sintaxe Abstrata).
-        code: Código-fonte como uma string.
+        node: Current AST node.
+        code: Original source code as a string.
 
     Returns:
-        List[str]: Lista de tokens processados.
+        List[str]: List of relevant tokens as strings.
     """
     tokens = []
-
-    # Ignora o processamento do conteúdo bruto do nó raiz
-    if node.type == 'identifier':  # Captura identificadores
-        tokens.append(code[node.start_byte:node.end_byte].strip())
-    elif node.type.startswith('preproc_'):  # Trata diretivas de pré-processador
-        tokens.append(code[node.start_byte:node.end_byte].strip())
-    elif node.type == 'string_literal':  # Trata literais de string
-        tokens.append(code[node.start_byte:node.end_byte].strip())
-
-    # Processa recursivamente os nós filhos
+    if node.type in {"string_literal", "number_literal"}:
+        tokens.append(code[node.start_byte:node.end_byte])
+    elif node.type in {"binary_operator", "unary_operator"}:
+        tokens.append(code[node.start_byte:node.end_byte])
+    elif node.type in {"if_statement", "for_statement", "while_statement", "return_statement"}:
+        tokens.append(node.type)
+    elif node.type in {"type_identifier", "identifier"}:
+        tokens.append(code[node.start_byte:node.end_byte])
+    elif node.type.startswith("preproc_"):
+        tokens.append(code[node.start_byte:node.end_byte])
     for child in node.children:
-        tokens.extend(collect_tokens(child, code))
-
+        tokens.extend(collect_relevant_tokens(child, code))
     return tokens
 
-def collect_relevant_tokens(node, code, debug=False, depth=0):
+def preprocess_code(code, file_path):
     """
-    Coleta tokens relevantes da árvore de sintaxe.
+    Preprocess the provided code using tree-sitter for analysis and tokenization.
 
     Args:
-        node: Nó atual da AST.
-        code: Código-fonte original como string.
-        debug: Booleano para ativar logs detalhados.
-        depth: Profundidade atual na árvore para depuração.
+        code: Source code as a string.
+        file_path: Path to the file being processed (for logging purposes).
 
     Returns:
-        List[dict]: Lista de tokens relevantes com metadados.
+        Tuple[str, List[str]]: 
+            - Concatenated token string.
+            - List of tokens.
     """
-    tokens = []
-    indent = "  " * depth
-
-    if debug:
-        print(f"{indent}[DEBUG] Visitando nó: {node.type}")
-
-    if node.type in {"string_literal", "number_literal"}:  # Literais
-        token = {
-            "text": code[node.start_byte:node.end_byte],
-            "type": node.type,
-            "category": "literal"
-        }
-        tokens.append(token)
-        if debug:
-            print(f"{indent}[INFO] Literal encontrado: {token}")
-    elif node.type in {"binary_operator", "unary_operator"}:  # Operadores
-        token = {
-            "text": code[node.start_byte:node.end_byte],
-            "type": node.type,
-            "category": "operator"
-        }
-        tokens.append(token)
-        if debug:
-            print(f"{indent}[INFO] Operador encontrado: {token}")
-    elif node.type in {"if_statement", "for_statement", "while_statement", "return_statement"}:  # Estruturas de controle
-        token = {
-            "text": node.type,
-            "type": node.type,
-            "category": "control_structure"
-        }
-        tokens.append(token)
-        if debug:
-            print(f"{indent}[INFO] Estrutura de controle encontrada: {token}")
-        for child in node.children:
-            tokens.extend(collect_relevant_tokens(child, code, debug, depth + 1))
-    elif node.type in {"type_identifier", "identifier"}:  # Identificadores e tipos
-        token = {
-            "text": code[node.start_byte:node.end_byte],
-            "type": node.type,
-            "category": "identifier"
-        }
-        tokens.append(token)
-        if debug:
-            print(f"{indent}[INFO] Identificador encontrado: {token}")
-    elif node.type.startswith("preproc_"):  # Diretivas de pré-processador
-        token = {
-            "text": code[node.start_byte:node.end_byte],
-            "type": node.type,
-            "category": "preprocessor"
-        }
-        tokens.append(token)
-        if debug:
-            print(f"{indent}[INFO] Diretiva de pré-processador encontrada: {token}")
-
-    for child in node.children:
-        tokens.extend(collect_relevant_tokens(child, code, debug, depth + 1))
-
-    return tokens
-
-def preprocess_code(code, debug=False, mode="relevant"):
-    """
-    Preprocessa o código fornecido usando tree-sitter para análise e tokenização.
-
-    Args:
-        code: Código-fonte a ser processado.
-        debug: Ativa logs detalhados.
-        mode: Modo de processamento ("relevant" ou "identifiers").
-    """
+    print(f"[INFO] Preprocessing file: {file_path}")
     parser = Parser()
     parser.set_language(C_LANGUAGE)
-
     try:
         tree = parser.parse(bytes(code, "utf8"))
     except Exception as e:
-        print(f"Erro ao analisar o código! Erro: {e}")
-        return None
+        print(f"[ERROR] Error parsing {file_path}: {e}")
+        return None, []
+    tokens = collect_relevant_tokens(tree.root_node, code)
 
-    tokens = []
-    if mode == "identifiers":
-        tokens = collect_tokens(tree.root_node, code)
-    elif mode == "relevant":
-        tokens = collect_relevant_tokens(tree.root_node, code, debug)
-    else:
-        print(f"[ERRO] Modo desconhecido: {mode}")
-        return None
-    # Remove o primeiro token, se existir
     if tokens:
-        tokens.pop(0)
+        removed_token = tokens.pop(0)
+    print(f"[DEBUG] Extracted {len(tokens)} tokens from {file_path}")
+    return " ".join(tokens), tokens
 
-    # Filtra e achata tokens em strings
-    token_texts = [token["text"] if isinstance(token, dict) else token for token in tokens]
-
-    if debug:
-        print("[DEBUG] Tokens processados:", token_texts)
-
-    return " ".join(token_texts)
-
-def debug_file(file_path, debug, mode):
+def process_files(base_path, pattern, min_files, max_files):
     """
-    Depura um arquivo específico, processando-o.
+    Recursively process files matching a specific pattern in the base directory,
+    assigning labels based on CWE directories.
 
     Args:
-        file_path: Caminho para o arquivo a ser depurado.
-        debug: Booleano para ativar logs detalhados.
-        mode: Modo de processamento ("relevant" ou "identifiers").
+        base_path: Base directory to search for files.
+        pattern: Filename pattern to match.
+        min_files: Minimum number of matching files required per CWE directory.
+        max_files: Maximum number of matching files to process per CWE directory.
+
+    Returns:
+        Tuple[List[dict], List[int], dict]: (data, labels, label_map)
     """
-    print(f"[INFO] Depurando arquivo: {file_path}")
-    try:
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            code = f.read()
-            processed_code = preprocess_code(code, debug, mode)
-            if processed_code:
-                print("[DEBUG] Saída do código processado:")
-                print(processed_code)
-            else:
-                print("[AVISO] O arquivo não pôde ser processado.")
-    except FileNotFoundError:
-        print(f"[ERRO] Arquivo não encontrado: {file_path}")
+    print(f"[INFO] Searching for files in {base_path} matching pattern '{pattern}'")
+    data = []
+    labels = []
+    label_map = {}
+    label_counter = 0
+    total_processed = 0
+
+    for root, _, files in os.walk(base_path):
+        # Identify CWE directories by extracting the CWE identifier from the folder name
+        # Assumes CWE directories are named like 'CWE122_Heap_Based_Buffer_Overflow'
+        # Adjust the extraction logic if your directory naming convention differs
+        folder_name = os.path.basename(root)
+        if not folder_name.startswith("CWE"):
+            continue  # Skip non-CWE directories
+
+        # Filter files that match the pattern
+        matching_files = [f for f in files if f.endswith((".c", ".cpp")) and pattern in f]
+
+        # Ensure directory meets the file count interval criteria
+        if len(matching_files) < min_files or len(matching_files) > max_files:
+            print(f"[INFO] Skipping directory '{root}': {len(matching_files)} matching files (required interval: {min_files}-{max_files}).")
+            continue
+
+        # Assign a label to this CWE directory
+        label_map[folder_name] = label_counter
+        current_label = label_counter
+        label_counter += 1
+        print(f"[INFO] Processing directory '{root}' with label '{current_label}'.")
+
+        processed_in_dir = 0
+        for file_name in matching_files:
+            if processed_in_dir >= max_files:
+                print(f"[INFO] Reached the max file limit for directory: {root}")
+                break
+
+            file_path = os.path.join(root, file_name)
+            print(f"[INFO] Found matching file: {file_path}")
+
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    code = f.read()
+                    processed_code, tokens = preprocess_code(code, file_path)
+                    if processed_code:
+                        data.append({"tokens": tokens})
+                        labels.append(current_label)
+                        print(f"[INFO] Successfully processed: {file_path}")
+                        processed_in_dir += 1
+                        total_processed += 1
+                    else:
+                        print(f"[WARN] Skipping file {file_path}: Preprocessing failed.")
+            except Exception as e:
+                print(f"[ERROR] Could not process {file_path}: {e}")
+
+    if total_processed == 0:
+        print("[WARN] No matching files found within the specified interval.")
+    else:
+        print(f"[INFO] Finished processing {total_processed} files across all directories.")
+
+    return data, labels, label_map
+
+def train_word2vec(corpus):
+    """
+    Train a Word2Vec model on the provided corpus.
+
+    Args:
+        corpus: List of token lists.
+
+    Returns:
+        Word2Vec: Trained Word2Vec model.
+    """
+    print(f"[INFO] Training Word2Vec model on {len(corpus)} samples")
+    model = Word2Vec(sentences=corpus, vector_size=100, window=5, min_count=1, workers=4)
+    model.save("word2vec.model")
+    print("[INFO] Word2Vec model saved as 'word2vec.model'")
+    return model
+
+def convert_to_vectors(data, word2vec_model):
+    """
+    Convert code data to vectors using a trained Word2Vec model.
+
+    Args:
+        data: List of code data dictionaries.
+        word2vec_model: Trained Word2Vec model.
+
+    Returns:
+        np.array: Array of vectors.
+    """
+    print("[INFO] Converting processed code to vectors")
+    vectors = []
+    for idx, item in enumerate(data):
+        tokens = item["tokens"]
+        token_vectors = [word2vec_model.wv[token] for token in tokens if token in word2vec_model.wv]
+        if token_vectors:
+            vectors.append(np.mean(token_vectors, axis=0))
+        else:
+            vectors.append(np.zeros(word2vec_model.vector_size))
+        if (idx + 1) % 10 == 0:
+            print(f"[DEBUG] Converted {idx + 1}/{len(data)} samples to vectors")
+    print("[INFO] Vectorization complete")
+    return np.array(vectors)
 
 def main():
-    parser = argparse.ArgumentParser(description="Processa datasets CWE e treina um modelo.")
-    parser.add_argument("--base_path", type=str, help="Caminho para o diretório principal contendo subdiretórios CWE.")
-    parser.add_argument("--minFiles", type=int, default=10, help="Número mínimo de arquivos necessários em uma pasta CWE para processamento.")
-    parser.add_argument("--maxFiles", type=int, default=100, help="Número máximo de arquivos a serem processados por pasta CWE.")
-    parser.add_argument("--debug", action="store_true", help="Ativa modo de depuração com logs detalhados.")
-    parser.add_argument("--debug_file", type=str, help="Especifica um arquivo para depuração.")
-    parser.add_argument("--token_mode", type=str, choices=["relevant", "identifiers"], default="relevant",
-                        help="Escolha a função para processar tokens: 'relevant' para collect_relevant_tokens, 'identifiers' para collect_tokens.")
+    parser = argparse.ArgumentParser(description="Process CWE datasets and generate required files.")
+    parser.add_argument("--base_path", type=str, required=True, help="Path to the main directory containing CWE subdirectories.")
+    parser.add_argument("--pattern", type=str, default="bad", help="Pattern to match in file names.")
+    parser.add_argument("--minFiles", type=int, default=1, help="Minimum number of matching files per CWE directory.")
+    parser.add_argument("--maxFiles", type=int, default=100, help="Maximum number of matching files per CWE directory.")
     args = parser.parse_args()
 
-    if args.debug and args.debug_file:
-        debug_file(args.debug_file, args.debug, args.token_mode)
-    elif args.base_path:
-        # Processa todo o dataset (não mostrado neste script para brevidade)
-        pass
+    if not os.path.isdir(args.base_path):
+        print(f"[ERROR] The base path does not exist or is not a directory: {args.base_path}")
+        return
+
+    print(f"[INFO] Starting processing for base path: {args.base_path} with pattern: '{args.pattern}'")
+    data, labels, label_map = process_files(args.base_path, args.pattern, args.minFiles, args.maxFiles)
+
+    if data:
+        # Save cwe_data.json
+        print(f"[INFO] Saving processed data to 'cwe_data.json'")
+        with open("cwe_data.json", "w", encoding="utf-8") as data_file:
+            json.dump(data, data_file, ensure_ascii=False, indent=4)
+
+        # Save cwe_labels.json
+        print(f"[INFO] Saving labels to 'cwe_labels.json'")
+        with open("cwe_labels.json", "w", encoding="utf-8") as labels_file:
+            json.dump(labels, labels_file, ensure_ascii=False, indent=4)
+
+        # Save cwe_label_map.json
+        print(f"[INFO] Saving label map to 'cwe_label_map.json'")
+        with open("cwe_label_map.json", "w", encoding="utf-8") as label_map_file:
+            json.dump(label_map, label_map_file, ensure_ascii=False, indent=4)
+
+        # Train Word2Vec model
+        print("[INFO] Preparing corpus for Word2Vec training")
+        corpus = [item["tokens"] for item in data]
+        word2vec_model = train_word2vec(corpus)
+
+        # Convert to vectors
+        vectors = convert_to_vectors(data, word2vec_model)
+
+        # Save cwe_vectors.json
+        print(f"[INFO] Saving vectors to 'cwe_vectors.json'")
+        with open("cwe_vectors.json", "w", encoding="utf-8") as vectors_file:
+            json.dump(vectors.tolist(), vectors_file, ensure_ascii=False, indent=4)
+
+        print("[INFO] Processing complete. All files successfully processed!")
     else:
-        print("[ERRO] Você deve especificar --base_path ou --debug_file para processamento.")
+        print("[WARN] No files matched the pattern or were processed.")
 
 if __name__ == "__main__":
     main()
