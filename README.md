@@ -266,10 +266,6 @@ python3 load_and_process_cwe_datasets.py --base_path /home/fbiaso/dados/Document
 
 #### Distribuição das Classes CWE (DB ~ 1000 arquivos/categoria)
 
-A execução do script gerou uma base de dados cuja distribuição das classes pode ser visualizada na imagem abaixo:
-
-<img src="imgs/cwe_class_distribution_1000files.png" alt="Distribuição das Classes CW" width="100%">
-
 ---
 #### Exemplo: Treinamento do Modelo // Teste 1 // [test_size=0.3, n_estimators=100, vector_size=100]
 

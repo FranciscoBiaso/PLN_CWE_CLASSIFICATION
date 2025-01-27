@@ -4,27 +4,42 @@ import argparse
 import numpy as np
 from tree_sitter import Language, Parser
 from gensim.models import Word2Vec
+import logging
 
 # Load the combined language library
-# Ensure you have built the tree-sitter library correctly and the path is accurate
-# Example build command:
-# Language.build_library(
-#     'tree-sitter-dir/tree_sitter.so',
-#     ['tree-sitter-c']
-# )
-C_LANGUAGE = Language('tree-sitter-dir/tree_sitter.so', 'c')
+C_LANGUAGE = Language('tree-sitter-cpp/libtree-sitter-cpp.so', 'cpp')
+
+# Define color codes for logs
+RESET = "\033[0m"
+BOLD = "\033[1m"
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+CYAN = "\033[96m"
+
+class ColoredFormatter(logging.Formatter):
+    def format(self, record):
+        log_message = super().format(record)
+        if record.levelno == logging.INFO:
+            return f"{BLUE}{BOLD}{log_message}{RESET}"
+        elif record.levelno == logging.WARNING:
+            return f"{YELLOW}{BOLD}{log_message}{RESET}"
+        elif record.levelno == logging.ERROR:
+            return f"{RED}{BOLD}{log_message}{RESET}"
+        elif record.levelno == logging.DEBUG:
+            return f"{CYAN}{BOLD}{log_message}{RESET}"
+        return log_message
+
+# Configure logging
+logger = logging.getLogger()
+handler = logging.StreamHandler()
+formatter = ColoredFormatter('%(asctime)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 def collect_relevant_tokens(node, code):
-    """
-    Collect relevant tokens from the syntax tree.
-
-    Args:
-        node: Current AST node.
-        code: Original source code as a string.
-
-    Returns:
-        List[str]: List of relevant tokens as strings.
-    """
     tokens = []
     if node.type in {"string_literal", "number_literal"}:
         tokens.append(code[node.start_byte:node.end_byte])
@@ -41,195 +56,137 @@ def collect_relevant_tokens(node, code):
     return tokens
 
 def preprocess_code(code, file_path):
-    """
-    Preprocess the provided code using tree-sitter for analysis and tokenization.
-
-    Args:
-        code: Source code as a string.
-        file_path: Path to the file being processed (for logging purposes).
-
-    Returns:
-        Tuple[str, List[str]]: 
-            - Concatenated token string.
-            - List of tokens.
-    """
-    print(f"[INFO] Preprocessing file: {file_path}")
     parser = Parser()
     parser.set_language(C_LANGUAGE)
     try:
         tree = parser.parse(bytes(code, "utf8"))
     except Exception as e:
-        print(f"[ERROR] Error parsing {file_path}: {e}")
-        return None, []
+        logger.error(f"❌ Error parsing file {file_path}: {e}")
+        return None
     tokens = collect_relevant_tokens(tree.root_node, code)
+    return tokens
 
-    if tokens:
-        removed_token = tokens.pop(0)
-    print(f"[DEBUG] Extracted {len(tokens)} tokens from {file_path}")
-    return " ".join(tokens), tokens
+def collect_files_in_subfolder(subfolder_path, pattern, min_files, max_files):
+    eligible_files = []
+    for root, _, files in os.walk(subfolder_path):
+        for file in files:
+            if file.endswith((".c", ".cpp")) and (not pattern or pattern in file):
+                eligible_files.append(os.path.join(root, file))
 
-def process_files(base_path, pattern, min_files, max_files):
-    """
-    Recursively process files matching a specific pattern in the base directory,
-    assigning labels based on CWE directories.
+    if len(eligible_files) < min_files:
+        return []
+    
+    return eligible_files[:max_files]
 
-    Args:
-        base_path: Base directory to search for files.
-        pattern: Filename pattern to match.
-        min_files: Minimum number of matching files required per CWE directory.
-        max_files: Maximum number of matching files to process per CWE directory.
-
-    Returns:
-        Tuple[List[dict], List[int], dict]: (data, labels, label_map)
-    """
-    print(f"[INFO] Searching for files in {base_path} matching pattern '{pattern}'")
+def process_files_by_subfolder(base_path, pattern, max_files, min_files, labels, label_map):
+    logger.info(f"🔍 {BOLD}Scanning for files in subfolders of {base_path}...{RESET}")
     data = []
-    labels = []
-    label_map = {}
-    label_counter = 0
-    total_processed = 0
+    total_files_processed = 0
 
-    for root, _, files in os.walk(base_path):
-        # Identify CWE directories by extracting the CWE identifier from the folder name
-        # Assumes CWE directories are named like 'CWE122_Heap_Based_Buffer_Overflow'
-        # Adjust the extraction logic if your directory naming convention differs
-        folder_name = os.path.basename(root)
-        if not folder_name.startswith("CWE"):
-            continue  # Skip non-CWE directories
-
-        # Filter files that match the pattern
-        matching_files = [f for f in files if f.endswith((".c", ".cpp")) and pattern in f]
-
-        # Ensure directory meets the file count interval criteria
-        if len(matching_files) < min_files or len(matching_files) > max_files:
-            print(f"[INFO] Skipping directory '{root}': {len(matching_files)} matching files (required interval: {min_files}-{max_files}).")
+    label_id = 0
+    for subfolder in sorted(os.listdir(base_path)):
+        subfolder_path = os.path.join(base_path, subfolder)
+        if not os.path.isdir(subfolder_path):
             continue
 
-        # Assign a label to this CWE directory
-        label_map[folder_name] = label_counter
-        current_label = label_counter
-        label_counter += 1
-        print(f"[INFO] Processing directory '{root}' with label '{current_label}'.")
+        if subfolder not in label_map:
+            label_map[subfolder] = label_id
+            labels.append(label_id)
+            logger.info(f"📂 {CYAN}Assigned label {label_id} to category: {subfolder}{RESET}")
+            label_id += 1
 
-        processed_in_dir = 0
-        for file_name in matching_files:
-            if processed_in_dir >= max_files:
-                print(f"[INFO] Reached the max file limit for directory: {root}")
-                break
+        eligible_files = collect_files_in_subfolder(subfolder_path, pattern, min_files, max_files)
 
-            file_path = os.path.join(root, file_name)
-            print(f"[INFO] Found matching file: {file_path}")
+        if not eligible_files:
+            logger.warning(f"⚠️ {YELLOW}No files found in subfolder: {subfolder}.{RESET}")
+            continue
 
+        logger.info(f"📂 {CYAN}Processing {len(eligible_files)} files in subfolder: {subfolder}.{RESET}")
+        file_count = 0
+        for file_path in eligible_files:
             try:
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     code = f.read()
-                    processed_code, tokens = preprocess_code(code, file_path)
-                    if processed_code:
-                        data.append({"tokens": tokens})
-                        labels.append(current_label)
-                        print(f"[INFO] Successfully processed: {file_path}")
-                        processed_in_dir += 1
-                        total_processed += 1
-                    else:
-                        print(f"[WARN] Skipping file {file_path}: Preprocessing failed.")
+                    processed_tokens = preprocess_code(code, file_path)
+                    if processed_tokens:
+                        data.append({"subfolder": subfolder, "code": processed_tokens, "label": label_map[subfolder]})
             except Exception as e:
-                print(f"[ERROR] Could not process {file_path}: {e}")
+                logger.error(f"⚠️ Error processing file {file_path}: {e}")
+            file_count += 1
 
-    if total_processed == 0:
-        print("[WARN] No matching files found within the specified interval.")
+        total_files_processed += file_count
+
+    if total_files_processed == 0:
+        logger.warning(f"⚠️ {YELLOW}No files were processed.{RESET}")
     else:
-        print(f"[INFO] Finished processing {total_processed} files across all directories.")
-
-    return data, labels, label_map
+        logger.info(f"✅ {GREEN}Finished processing {total_files_processed} files.{RESET}")
+    
+    return data
 
 def train_word2vec(corpus):
-    """
-    Train a Word2Vec model on the provided corpus.
-
-    Args:
-        corpus: List of token lists.
-
-    Returns:
-        Word2Vec: Trained Word2Vec model.
-    """
-    print(f"[INFO] Training Word2Vec model on {len(corpus)} samples")
-    model = Word2Vec(sentences=corpus, vector_size=100, window=5, min_count=1, workers=4)
+    logger.info(f"🧠 {BOLD}Training Word2Vec model...{RESET}")
+    tokenized_corpus = [tokens for tokens in corpus]
+    model = Word2Vec(sentences=tokenized_corpus, vector_size=100, window=5, min_count=1, workers=4)
     model.save("word2vec.model")
-    print("[INFO] Word2Vec model saved as 'word2vec.model'")
+    logger.info(f"✅ {GREEN}Word2Vec model training completed and saved as 'word2vec.model'.{RESET}")
     return model
 
 def convert_to_vectors(data, word2vec_model):
-    """
-    Convert code data to vectors using a trained Word2Vec model.
-
-    Args:
-        data: List of code data dictionaries.
-        word2vec_model: Trained Word2Vec model.
-
-    Returns:
-        np.array: Array of vectors.
-    """
-    print("[INFO] Converting processed code to vectors")
+    logger.info(f"🔄 {BOLD}Converting processed code to vectors...{RESET}")
     vectors = []
-    for idx, item in enumerate(data):
-        tokens = item["tokens"]
+    for item in data:
+        tokens = item["code"]
         token_vectors = [word2vec_model.wv[token] for token in tokens if token in word2vec_model.wv]
         if token_vectors:
             vectors.append(np.mean(token_vectors, axis=0))
         else:
             vectors.append(np.zeros(word2vec_model.vector_size))
-        if (idx + 1) % 10 == 0:
-            print(f"[DEBUG] Converted {idx + 1}/{len(data)} samples to vectors")
-    print("[INFO] Vectorization complete")
+    logger.info(f"✅ {GREEN}Vectorization complete.{RESET}")
     return np.array(vectors)
 
 def main():
     parser = argparse.ArgumentParser(description="Process CWE datasets and generate required files.")
-    parser.add_argument("--base_path", type=str, required=True, help="Path to the main directory containing CWE subdirectories.")
-    parser.add_argument("--pattern", type=str, default="bad", help="Pattern to match in file names.")
-    parser.add_argument("--minFiles", type=int, default=1, help="Minimum number of matching files per CWE directory.")
-    parser.add_argument("--maxFiles", type=int, default=100, help="Maximum number of matching files per CWE directory.")
+    parser.add_argument("--base_path", type=str, required=True, help="Path to the main directory containing code files.")
+    parser.add_argument("--pattern", type=str, default="", help="Pattern to match in file names.")
+    parser.add_argument("--maxFiles", type=int, default=100, help="Maximum number of files to process per subfolder.")
+    parser.add_argument("--minFiles", type=int, default=0, help="Minimum number of files required in a subfolder.")
     args = parser.parse_args()
 
     if not os.path.isdir(args.base_path):
-        print(f"[ERROR] The base path does not exist or is not a directory: {args.base_path}")
+        logger.error(f"❌ {RED}The base path does not exist or is not a directory: {args.base_path}{RESET}")
         return
 
-    print(f"[INFO] Starting processing for base path: {args.base_path} with pattern: '{args.pattern}'")
-    data, labels, label_map = process_files(args.base_path, args.pattern, args.minFiles, args.maxFiles)
+    labels = []
+    label_map = {}
+
+    logger.info(f"🔍 {BOLD}Starting processing for base path: {args.base_path}...{RESET}")
+    data = process_files_by_subfolder(args.base_path, args.pattern, args.maxFiles, args.minFiles, labels, label_map)
+
+    if labels:
+        with open("cwe_labels.json", "w", encoding="utf-8") as labels_file:
+            json.dump(labels, labels_file, ensure_ascii=False, indent=4)
+        logger.info(f"💾 {BOLD}Labels saved to 'cwe_labels.json'.{RESET}")
+
+    if label_map:
+        with open("cwe_label_map.json", "w", encoding="utf-8") as label_map_file:
+            json.dump(label_map, label_map_file, ensure_ascii=False, indent=4)
+        logger.info(f"💾 {BOLD}Label map saved to 'cwe_label_map.json'.{RESET}")
 
     if data:
-        # Save cwe_data.json
-        print(f"[INFO] Saving processed data to 'cwe_data.json'")
+        logger.info(f"💾 {BOLD}Saving processed data to 'cwe_data.json'...{RESET}")
         with open("cwe_data.json", "w", encoding="utf-8") as data_file:
             json.dump(data, data_file, ensure_ascii=False, indent=4)
 
-        # Save cwe_labels.json
-        print(f"[INFO] Saving labels to 'cwe_labels.json'")
-        with open("cwe_labels.json", "w", encoding="utf-8") as labels_file:
-            json.dump(labels, labels_file, ensure_ascii=False, indent=4)
+        word2vec_model = train_word2vec([item["code"] for item in data])
 
-        # Save cwe_label_map.json
-        print(f"[INFO] Saving label map to 'cwe_label_map.json'")
-        with open("cwe_label_map.json", "w", encoding="utf-8") as label_map_file:
-            json.dump(label_map, label_map_file, ensure_ascii=False, indent=4)
-
-        # Train Word2Vec model
-        print("[INFO] Preparing corpus for Word2Vec training")
-        corpus = [item["tokens"] for item in data]
-        word2vec_model = train_word2vec(corpus)
-
-        # Convert to vectors
         vectors = convert_to_vectors(data, word2vec_model)
-
-        # Save cwe_vectors.json
-        print(f"[INFO] Saving vectors to 'cwe_vectors.json'")
+        logger.info(f"💾 {BOLD}Saving vectors to 'cwe_vectors.json'...{RESET}")
         with open("cwe_vectors.json", "w", encoding="utf-8") as vectors_file:
             json.dump(vectors.tolist(), vectors_file, ensure_ascii=False, indent=4)
 
-        print("[INFO] Processing complete. All files successfully processed!")
+        logger.info(f"✅ {GREEN}Processing complete. All files successfully processed!{RESET}")
     else:
-        print("[WARN] No files matched the pattern or were processed.")
+        logger.warning(f"⚠️ {YELLOW}No files matched the pattern or were processed.{RESET}")
 
 if __name__ == "__main__":
     main()
